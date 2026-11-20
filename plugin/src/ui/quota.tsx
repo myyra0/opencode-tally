@@ -26,6 +26,8 @@ export interface QuotaSectionProps {
   compact: boolean
   showResetTime: boolean
   labelWidth?: number
+  /** Lets the label column absorb spare width instead of truncating. */
+  flexLabel?: boolean
   /** Optional sidebar toggles. The panel leaves them unset and keeps both columns. */
   showBar?: boolean
   showPercent?: boolean
@@ -67,6 +69,7 @@ function WindowRow(props: {
   compact: boolean
   showResetTime: boolean
   labelWidth: number
+  flexLabel?: boolean
   now: number
   showBar: boolean
   showPercent: boolean
@@ -83,6 +86,7 @@ function WindowRow(props: {
       theme={props.theme}
       label={props.window.label}
       labelWidth={props.labelWidth}
+      flexLabel={props.flexLabel}
       value={formatQuotaText(props.window.quota)}
     />
   ) : (
@@ -90,6 +94,7 @@ function WindowRow(props: {
       theme={props.theme}
       label={props.window.label}
       labelWidth={props.labelWidth}
+      flexLabel={props.flexLabel}
       cells={props.showBar ? barCells(used() ?? 0, props.barWidth) : undefined}
       barWidth={props.showBar ? props.barWidth : undefined}
       brackets={props.showBar}
@@ -109,6 +114,7 @@ function ProviderBlock(props: {
   compact: boolean
   showResetTime: boolean
   labelWidth: number
+  flexLabel?: boolean
   now: number
   showBar: boolean
   showPercent: boolean
@@ -145,6 +151,7 @@ function ProviderBlock(props: {
             compact={props.compact}
             showResetTime={props.showResetTime}
             labelWidth={props.labelWidth}
+            flexLabel={props.flexLabel}
             now={props.now}
             showBar={props.showBar}
             showPercent={props.showPercent}
@@ -195,6 +202,7 @@ export function QuotaSection(props: QuotaSectionProps): JSX.Element {
             compact={props.compact}
             showResetTime={props.showResetTime}
             labelWidth={labelWidth()}
+            flexLabel={props.flexLabel}
             now={now}
             showBar={
               (props.showBar ?? true) &&
