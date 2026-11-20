@@ -16,8 +16,8 @@ import { QuotaSection } from "../ui/quota.js"
 import { DEFAULT_SIDEBAR_CONFIG, loadSidebarConfig } from "./config.js"
 import { resolveSections } from "./sections.js"
 
-const LABEL_WIDTH = 6
-const NARROW_LABEL_WIDTH = 5
+const LABEL_WIDTH = 9
+const NARROW_LABEL_WIDTH = 7
 const VALUE_WIDTH = 6
 const QUOTA_BAR_WIDTH = 12
 const LOCAL_BAR_WIDTH = 8
@@ -31,11 +31,22 @@ function usageTotal(usage: ReportView["recorded"]): number {
 function recordedRows(usage: ReportView["recorded"]): ReportRow[] {
   return [
     { label: "input", tokens: usage.input },
-    { label: "cache read", tokens: usage.cacheRead },
-    ...(usage.cacheWrite > 0 ? [{ label: "cache write", tokens: usage.cacheWrite }] : []),
+    { label: "cache rd", tokens: usage.cacheRead },
+    ...(usage.cacheWrite > 0 ? [{ label: "cache wr", tokens: usage.cacheWrite }] : []),
     { label: "output", tokens: usage.output },
     ...(usage.reasoning > 0 ? [{ label: "reasoning", tokens: usage.reasoning }] : []),
   ]
+}
+
+// The sidebar's label column is narrower than the panel's. Shorten the few view labels that
+// would otherwise be truncated mid-word.
+const SIDEBAR_LABELS: Record<string, string> = {
+  "System prompt": "system",
+  "Tool output": "tools",
+}
+
+function sidebarRows(rows: ReportRow[]): ReportRow[] {
+  return rows.map((row) => ({ ...row, label: SIDEBAR_LABELS[row.label] ?? row.label }))
 }
 
 /**
@@ -74,6 +85,7 @@ function LocalRows(props: {
   total: number
   theme: Theme
   labelWidth: number
+  flexLabel?: boolean
   showBars: boolean
   showPercentages: boolean
 }): JSX.Element {
@@ -84,6 +96,7 @@ function LocalRows(props: {
           theme={props.theme}
           label={row.label}
           labelWidth={props.labelWidth}
+          flexLabel={props.flexLabel}
           valueWidth={VALUE_WIDTH}
           cells={props.showBars ? barCells(props.total > 0 ? (row.tokens / props.total) * 100 : 0, LOCAL_BAR_WIDTH) : undefined}
           barWidth={props.showBars ? LOCAL_BAR_WIDTH : undefined}
@@ -137,6 +150,7 @@ export function SidebarView(props: SidebarViewProps): JSX.Element {
                 compact
                 showResetTime={false}
                 labelWidth={labelWidth()}
+                flexLabel
                 showBar={props.config.showBars}
                 showPercent={props.config.showPercentages}
                 providerDisplays={props.quota.providerDisplays}
@@ -161,6 +175,7 @@ export function SidebarView(props: SidebarViewProps): JSX.Element {
                       theme={props.theme}
                       label="Tokens"
                       labelWidth={labelWidth()}
+                      flexLabel
                       value={contextValueText(context.total(), undefined)}
                       strong
                     />
@@ -171,6 +186,7 @@ export function SidebarView(props: SidebarViewProps): JSX.Element {
                       theme={props.theme}
                       label="Tokens"
                       labelWidth={labelWidth()}
+                      flexLabel
                       valueWidth={VALUE_WIDTH}
                       cells={
                         props.config.showBars
@@ -201,6 +217,7 @@ export function SidebarView(props: SidebarViewProps): JSX.Element {
                     total={recorded.total()}
                     theme={props.theme}
                     labelWidth={labelWidth()}
+                    flexLabel
                     showBars={props.config.showBars}
                     showPercentages={props.config.showPercentages}
                   />
@@ -208,6 +225,7 @@ export function SidebarView(props: SidebarViewProps): JSX.Element {
                     theme={props.theme}
                     label="total"
                     labelWidth={labelWidth()}
+                    flexLabel
                     value={`${formatTokens(recorded.total(), true)} tokens`}
                     strong
                   />
@@ -215,6 +233,7 @@ export function SidebarView(props: SidebarViewProps): JSX.Element {
                     theme={props.theme}
                     label={current().costBasis === "estimated" ? "cost est" : "cost"}
                     labelWidth={labelWidth()}
+                    flexLabel
                     value={formatUsd(current().cost)}
                     strong
                   />
@@ -224,6 +243,7 @@ export function SidebarView(props: SidebarViewProps): JSX.Element {
                         theme={props.theme}
                         label="cache hit"
                         labelWidth={labelWidth()}
+                        flexLabel
                         value={`${cache().hitRate.toFixed(1)}% · saved ${formatUsd(cache().savings)}`}
                       />
                     )}
@@ -241,10 +261,11 @@ export function SidebarView(props: SidebarViewProps): JSX.Element {
               {(current) => (
                 <>
                   <LocalRows
-                    rows={current().content.rows}
+                    rows={sidebarRows(current().content.rows)}
                     total={current().content.total}
                     theme={props.theme}
                     labelWidth={labelWidth()}
+                    flexLabel
                     showBars={props.config.showBars}
                     showPercentages={props.config.showPercentages}
                   />
@@ -252,6 +273,7 @@ export function SidebarView(props: SidebarViewProps): JSX.Element {
                     theme={props.theme}
                     label="total"
                     labelWidth={labelWidth()}
+                    flexLabel
                     value={`${formatTokens(current().content.total, true)} tokens`}
                     strong
                   />
@@ -290,9 +312,18 @@ export function SidebarView(props: SidebarViewProps): JSX.Element {
         {(current) => (
           <>
             {props.config.showWarnings && current().warnings.length > 0 ? (
-              <text fg={props.theme.text.feedback.warning.base} wrapMode="none">
-                {`! ${current().warnings.length} warnings`}
-              </text>
+              <box flexDirection="column" flexShrink={0}>
+                <text fg={props.theme.text.feedback.warning.base} wrapMode="none">
+                  {`! ${current().warnings.length} warnings`}
+                </text>
+                <For each={current().warnings.slice(0, 2)}>
+                  {(warning) => (
+                    <text fg={props.theme.text.feedback.warning.base} wrapMode="none" truncate>
+                      {`  ${warning}`}
+                    </text>
+                  )}
+                </For>
+              </box>
             ) : null}
             {props.config.showUpdated ? (
               <text fg={props.theme.text.faint} wrapMode="none">

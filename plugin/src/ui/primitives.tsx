@@ -52,6 +52,7 @@ export function Row(props: {
   theme: Theme
   label: string
   labelWidth?: number
+  flexLabel?: boolean
   cells?: BarCells
   barWidth?: number
   brackets?: boolean
@@ -71,10 +72,18 @@ export function Row(props: {
 
   return (
     <box flexDirection="column" flexShrink={0}>
-      <box flexDirection="row" gap={1} height={1}>
-        <text fg={props.theme.text.muted} width={props.labelWidth ?? 24} wrapMode="none" truncate>
-          {props.label}
-        </text>
+      <box flexDirection="row" gap={1} height={1} width="100%">
+        {props.flexLabel ? (
+          <box flexGrow={1} flexShrink={1} minWidth={props.labelWidth ?? 6} height={1}>
+            <text fg={props.theme.text.muted} wrapMode="none" truncate>
+              {props.label}
+            </text>
+          </box>
+        ) : (
+          <text fg={props.theme.text.muted} width={props.labelWidth ?? 24} wrapMode="none" truncate>
+            {props.label}
+          </text>
+        )}
         {props.cells && props.barWidth !== undefined ? (
           <box flexDirection="row" flexShrink={0}>
             {props.brackets ? (
@@ -120,13 +129,22 @@ export function Line(props: {
   label: string
   value: string
   labelWidth?: number
+  flexLabel?: boolean
   strong?: boolean
 }): JSX.Element {
   return (
-    <box flexDirection="row" gap={1} height={1}>
-      <text fg={props.theme.text.muted} width={props.labelWidth ?? 24} wrapMode="none" truncate>
-        {props.label}
-      </text>
+    <box flexDirection="row" gap={1} height={1} width="100%">
+      {props.flexLabel ? (
+        <box flexGrow={1} flexShrink={1} minWidth={props.labelWidth ?? 6} height={1}>
+          <text fg={props.theme.text.muted} wrapMode="none" truncate>
+            {props.label}
+          </text>
+        </box>
+      ) : (
+        <text fg={props.theme.text.muted} width={props.labelWidth ?? 24} wrapMode="none" truncate>
+          {props.label}
+        </text>
+      )}
       <text
         fg={props.theme.text.base}
         attributes={props.strong ? TextAttributes.BOLD : TextAttributes.NONE}
