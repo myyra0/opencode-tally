@@ -1,0 +1,216 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/myyra0/opencode-tally/main/plugin/tally-config.schema.json",
+  "title": "Tally configuration",
+  "description": "Settings for the OpenCode Tally plugin. Every key is optional; anything you leave out uses the built-in default. Despite the .json name, comments and trailing commas are allowed (JSONC).",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "URL of this schema. Editors use it to validate and autocomplete this file. Safe to leave as-is."
+    },
+    "enableContextBreakdown": {
+      "type": "boolean",
+      "default": true,
+      "description": "Include the context breakdown by source (system, instructions, user, tool output, assistant). Requires an OpenCode restart."
+    },
+    "enableToolSchemaEstimation": {
+      "type": "boolean",
+      "default": true,
+      "description": "Include the estimate of how large the tool definitions are. Requires an OpenCode restart."
+    },
+    "enableCacheEfficiency": {
+      "type": "boolean",
+      "default": true,
+      "description": "Include the cache hit rate and savings lines. A cache hit is text the provider reused from an earlier request. Requires an OpenCode restart."
+    },
+    "enableSubagentAnalysis": {
+      "type": "boolean",
+      "default": true,
+      "description": "Include child sessions (subagents) in the report. Requires an OpenCode restart."
+    },
+    "enableDetailedSubagentCostBreakdown": {
+      "type": "boolean",
+      "default": false,
+      "description": "Expand each subagent into token and estimated cost buckets. Off by default to keep reports short. Requires an OpenCode restart."
+    },
+    "enableSkillAnalysis": {
+      "type": "boolean",
+      "default": true,
+      "description": "Include the available and loaded skills shown in the report. Requires an OpenCode restart."
+    },
+    "sidebar": {
+      "$ref": "#/definitions/sidebar",
+      "description": "Controls the Tally sidebar block. Changes take effect at the next refresh; no restart needed."
+    },
+    "quota": {
+      "$ref": "#/definitions/quota",
+      "description": "Controls subscription quota collection and which providers are read. Changes take effect at the next refresh; no restart needed."
+    }
+  },
+  "additionalProperties": false,
+  "definitions": {
+    "sidebarSection": {
+      "type": "string",
+      "enum": ["quota", "context", "recorded", "contextWindow"],
+      "description": "A sidebar section id: subscription quota, context breakdown, recorded usage, or context window."
+    },
+    "sidebar": {
+      "type": "object",
+      "description": "Sidebar display settings.",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show or hide the whole Tally sidebar block."
+        },
+        "refreshSeconds": {
+          "type": "integer",
+          "minimum": 15,
+          "default": 60,
+          "description": "How often the sidebar refreshes, in seconds. Must be a whole number of at least 15."
+        },
+        "sections": {
+          "type": "array",
+          "default": ["quota", "context", "recorded", "contextWindow"],
+          "items": { "$ref": "#/definitions/sidebarSection" },
+          "description": "Which sections to show, and in what order. Valid values are quota, context, recorded, and contextWindow. If none are valid, the four defaults come back."
+        },
+        "showBars": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show the small bar next to each number."
+        },
+        "showPercentages": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show the percentage next to each number."
+        },
+        "showWarnings": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show the '! N warnings' line when the report has warnings."
+        },
+        "showUpdated": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show the 'Updated <time>' line at the bottom."
+        }
+      },
+      "additionalProperties": false
+    },
+    "quota": {
+      "type": "object",
+      "description": "Subscription quota settings.",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Turn subscription quota collection on or off."
+        },
+        "refreshIntervalSeconds": {
+          "type": "integer",
+          "minimum": 15,
+          "default": 60,
+          "description": "How often quota numbers are fetched, in seconds. Must be a whole number of at least 15."
+        },
+        "requestTimeoutMs": {
+          "type": "number",
+          "minimum": 1000,
+          "default": 10000,
+          "description": "How long to wait for one provider to answer, in milliseconds (1000 ms = 1 second). Must be at least 1000."
+        },
+        "showErrors": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show provider error and diagnostic messages. Turn off to hide them."
+        },
+        "providers": {
+          "$ref": "#/definitions/providers",
+          "description": "Which subscriptions to read. Empty by default, so no quota appears until you enable a provider here."
+        }
+      },
+      "additionalProperties": false
+    },
+    "providers": {
+      "type": "object",
+      "description": "Provider entries keyed by provider ID. Remove an entry, or set its 'enabled' to false, to stop reading that provider.",
+      "properties": {
+        "alibaba-token-plan": { "$ref": "#/definitions/providerConfig" },
+        "codex": { "$ref": "#/definitions/providerConfig" },
+        "commandcode": { "$ref": "#/definitions/providerConfig" },
+        "claude-code": { "$ref": "#/definitions/providerConfig" },
+        "deepseek": { "$ref": "#/definitions/providerConfig" },
+        "minimax": { "$ref": "#/definitions/providerConfig" },
+        "moonshotai": { "$ref": "#/definitions/providerConfig" },
+        "moonshotai-cn": { "$ref": "#/definitions/providerConfig" },
+        "novita-ai": { "$ref": "#/definitions/providerConfig" },
+        "opencode-go": { "$ref": "#/definitions/providerConfig" },
+        "openrouter": { "$ref": "#/definitions/providerConfig" },
+        "qwen": { "$ref": "#/definitions/providerConfig" },
+        "synthetic": { "$ref": "#/definitions/providerConfig" },
+        "zai": { "$ref": "#/definitions/providerConfig" }
+      },
+      "additionalProperties": false
+    },
+    "providerConfig": {
+      "type": "object",
+      "description": "Settings for one subscription provider. Most credentials are picked up from OpenCode automatically; only override them if yours needs it.",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Turn this provider on. Disabled providers are not fetched and do not appear in the quota list."
+        },
+        "label": {
+          "type": "string",
+          "description": "A name of your choosing to show for this provider. Defaults to the provider's own label."
+        },
+        "showSidebarBar": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show a small bar next to this provider's quota in the sidebar."
+        },
+        "sidebarWindow": {
+          "type": "string",
+          "default": "all",
+          "enum": ["all", "rolling", "daily", "weekly", "monthly", "credits", "other"],
+          "description": "Which quota window to show in the sidebar. 'all' shows every window the provider reports."
+        },
+        "showFooterBar": {
+          "type": "boolean",
+          "description": "Accepted from pasted usage-limits configs, but not rendered by Tally. Safe to leave out."
+        },
+        "footerWindow": {
+          "type": "string",
+          "default": "auto",
+          "enum": ["auto", "rolling", "daily", "weekly", "monthly", "credits", "other"],
+          "description": "Accepted from pasted usage-limits configs, but not rendered by Tally. 'auto' lets the provider pick its own window."
+        },
+        "apiKey": {
+          "type": "string",
+          "description": "API key for the provider. Can be an environment reference such as '{env:MY_KEY}'. Only needed when OpenCode credentials are not picked up."
+        },
+        "authPath": {
+          "type": "string",
+          "description": "Path to an auth file or auth record to read credentials from."
+        },
+        "baseUrl": {
+          "type": "string",
+          "description": "Override the provider's API origin. A custom origin requires an explicit apiKey or authPath."
+        },
+        "authorizationScheme": {
+          "type": "string",
+          "enum": ["raw", "bearer"],
+          "description": "How to send the API key in the Authorization header: as the raw value or as a Bearer token."
+        },
+        "region": {
+          "type": "string",
+          "enum": ["international", "china"],
+          "description": "Alibaba Cloud only: which region's account to read. Credentials are not interchangeable across regions."
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

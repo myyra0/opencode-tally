@@ -1,0 +1,25 @@
+{
+  "$schema": "https://raw.githubusercontent.com/myyra0/opencode-tally/main/plugin/tally-config.schema.json",
+  "enableContextBreakdown": true,
+  "enableToolSchemaEstimation": true,
+  "enableCacheEfficiency": true,
+  "enableSubagentAnalysis": true,
+  "enableDetailedSubagentCostBreakdown": false,
+  "enableSkillAnalysis": true,
+  "sidebar": {
+    "enabled": true,
+    "refreshSeconds": 60,
+    "sections": ["quota", "context", "recorded", "contextWindow"],
+    "showBars": true,
+    "showPercentages": true,
+    "showWarnings": true,
+    "showUpdated": true
+  },
+  "quota": {
+    "enabled": true,
+    "refreshIntervalSeconds": 60,
+    "requestTimeoutMs": 10000,
+    "showErrors": true,
+    "providers": {}
+  }
+}

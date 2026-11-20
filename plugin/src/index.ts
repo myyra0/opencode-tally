@@ -1,0 +1,361 @@
+// Plugin entry point: registers the Tally tool, the /tally-report command, the UI RPCs, and request capture.
+
+// The plugin SDK is imported for types only, so this module loads without the SDK installed.
+import type { Plugin } from "@opencode/plugin"
+
+import type { ModelPricing, TokenAnalysis, TallyConfig } from "./lib/types.js"
+import { DEFAULT_ENTRY_LIMIT, loadModelPricing, loadTallyConfig } from "./lib/config.js"
+import { TokenizerManager } from "./lib/tokenizer.js"
+import { ModelResolver, ContentCollector, TokenAnalysisEngine } from "./lib/analyzer.js"
+import { CostCalculator } from "./lib/cost.js"
+import { SubagentAnalyzer } from "./lib/subagent.js"
+import { OutputFormatter } from "./lib/formatter.js"
+import { ContextAnalyzer } from "./lib/context.js"
+import { SkillAnalyzer } from "./lib/skill.js"
+import {
+  captureRequestSnapshot,
+  hasCompactedHistory,
+  normalizeMessages,
+  RequestSnapshotStore,
+  type OpenCodeContext,
+  type OpenCodeSession,
+} from "./lib/opencode.js"
+import { ModelMetadataResolver } from "./lib/metadata.js"
+import { WarningCollector, formatErrorMessage } from "./lib/warnings.js"
+import { buildFailureReport, buildSuccessSummary, createReportPath, writeReport } from "./lib/report.js"
+import { TallyRpc, type ReportView } from "./lib/rpc.js"
+import { createQuotaHandler } from "./lib/quota/rpc.js"
+import type { QuotaView } from "./lib/quota/types.js"
+import { loadOpenCodeAuthWithIntegrations } from "./lib/quota/auth.js"
+import { buildReportView } from "./lib/view.js"
+import {
+  addModelSupportWarnings,
+  addPerModelPricingWarnings,
+  addSessionAggregateWarnings,
+  attachConfiguredAnalyses,
+} from "./lib/session-workflow.js"
+
+const PLUGIN_ID = "tally"
+const TOOL_NAME = "tally"
+// The TUI part owns /tally and opens a native panel (see tui.tsx). This server command is the
+// model-driven path, for clients without a Tally UI part and for putting a report into the
+// session. Two commands with one name would both be listed, and this one would win on Enter.
+const COMMAND_NAME = "tally-report"
+
+const TOOL_DESCRIPTION =
+  "Analyze token usage across the current session with detailed breakdowns by category (system, user, assistant, tools, reasoning). " +
+  "Provides visual charts, identifies top token consumers, and includes costs from subagent child sessions."
+
+const TOOL_INPUT = {
+  type: "object",
+  properties: {
+    sessionID: {
+      type: "string",
+      description: "Optional explicit session ID. Leave unset to analyze the current session.",
+    },
+    limitMessages: {
+      type: "integer",
+      minimum: 1,
+      maximum: 10,
+      description: `How many top entries to list per category (default: ${DEFAULT_ENTRY_LIMIT})`,
+    },
+    includeSubagents: {
+      type: "boolean",
+      description: "Include token costs from subagent child sessions (default: true)",
+    },
+  },
+  additionalProperties: false,
+}
+
+const COMMAND_DESCRIPTION = "Have the model write a full token usage report into this session"
+
+const COMMAND_PROMPT = [
+  `Call the ${TOOL_NAME} tool directly without delegating to other agents.`,
+  "Leave sessionID unset unless the user explicitly asked to analyze a different session.",
+  "Then read the exact unique report path returned by Tally.",
+  "Return that file verbatim without additional text or formatting.",
+].join("\n")
+
+interface TallyArgs {
+  sessionID?: string
+  limitMessages?: number
+  includeSubagents?: boolean
+}
+
+interface TallyRuntime {
+  ctx: OpenCodeContext
+  snapshots: RequestSnapshotStore
+  // Set when capturing a model request failed, so reports can say why measured context is missing.
+  captureFailure: { message?: string }
+  pricingData: Record<string, ModelPricing>
+  config: TallyConfig
+}
+
+function readArgs(input: unknown): TallyArgs {
+  const args = (input ?? {}) as Record<string, unknown>
+  return {
+    sessionID: typeof args.sessionID === "string" && args.sessionID.trim() ? args.sessionID.trim() : undefined,
+    limitMessages: typeof args.limitMessages === "number" ? args.limitMessages : undefined,
+    includeSubagents: typeof args.includeSubagents === "boolean" ? args.includeSubagents : undefined,
+  }
+}
+
+interface SessionAnalysis {
+  analysis: TokenAnalysis
+  costCalculator: CostCalculator
+}
+
+/**
+ * Analyzes one session. Returns undefined when the session has no messages yet, and throws when
+ * the analysis cannot be completed; each caller decides how to present those outcomes.
+ */
+async function analyzeSession(
+  runtime: TallyRuntime,
+  args: TallyArgs,
+  sessionID: string,
+  warnings: WarningCollector
+): Promise<SessionAnalysis | undefined> {
+  const { ctx, snapshots, pricingData, config } = runtime
+
+  const session = await ctx.session.get({ sessionID })
+  const rawMessages = await ctx.session.context({ sessionID })
+  const messages = normalizeMessages(rawMessages)
+  if (messages.length === 0) return undefined
+
+  if (runtime.captureFailure.message) {
+    warnings.add(
+      `Tally could not capture a model request, so measured context may be missing: ${runtime.captureFailure.message}`,
+      "request-capture"
+    )
+  }
+
+  const snapshot = snapshots.get(sessionID)
+  const tokenizerManager = new TokenizerManager(warnings)
+  const analysisEngine = new TokenAnalysisEngine(tokenizerManager, new ContentCollector())
+  const { model: tokenModel, providerID, modelID } = new ModelResolver().resolveModelAndProvider(messages)
+  const metadataResolver = new ModelMetadataResolver(ctx.model, warnings)
+  const costCalculator = new CostCalculator(await metadataResolver.mergePricingData(pricingData))
+  const pricingModelName = costCalculator.buildLookupKey(providerID, modelID) || tokenModel.name
+
+  addModelSupportWarnings(warnings, costCalculator, tokenModel, providerID, modelID, pricingModelName)
+
+  const analysis = await analysisEngine.analyze(
+    sessionID,
+    messages,
+    tokenModel,
+    args.limitMessages ?? DEFAULT_ENTRY_LIMIT,
+    snapshot
+  )
+  analysis.pricingModelName = pricingModelName
+
+  addSessionAggregateWarnings(warnings, analysis, session, { compacted: hasCompactedHistory(rawMessages) })
+  addPerModelPricingWarnings(warnings, costCalculator, analysis, pricingModelName)
+  await attachConfiguredAnalyses({
+    analysis,
+    messages,
+    sessionID,
+    snapshot,
+    sessionPermissions: session.permissions,
+    tokenModel,
+    pricingModelName,
+    includeSubagents: args.includeSubagents,
+    config,
+    costCalculator,
+    subagentAnalyzer: new SubagentAnalyzer(ctx.session, costCalculator, warnings),
+    contextAnalyzer: new ContextAnalyzer(tokenizerManager, warnings),
+    skillAnalyzer: new SkillAnalyzer(ctx, tokenizerManager, warnings),
+  })
+
+  analysis.warnings = warnings.list()
+  return { analysis, costCalculator }
+}
+
+// The tool path: writes the text report to a file the model can read back.
+async function runTally(
+  runtime: TallyRuntime,
+  args: TallyArgs,
+  invocation: { sessionID: string; messageID: string },
+  getQuota: () => Promise<QuotaView>,
+): Promise<string> {
+  const sessionID = args.sessionID ?? invocation.sessionID
+  const warnings = new WarningCollector()
+
+  // Reports go to a private per-invocation file under OpenCode's temporary directory, which
+  // agents may read without an external-directory prompt. Analyzed worktrees stay untouched.
+  let outputPath: string
+  try {
+    outputPath = await createReportPath(sessionID, invocation.messageID)
+  } catch (error) {
+    return `Tally could not create a private temporary report location: ${formatErrorMessage(error)}`
+  }
+
+  try {
+    // Quota is independent of the transcript, so fetch both in one round. getQuotaSnapshot never
+    // throws: config/auth/provider failures become diagnostics or provider states in the view.
+    const [result, quota] = await Promise.all([
+      analyzeSession(runtime, args, sessionID, warnings),
+      getQuota(),
+    ])
+
+    if (!result) {
+      const output = buildFailureReport(sessionID, warnings.list(), `Session ${sessionID} has no messages yet.`)
+      const writeError = await writeReport(outputPath, output)
+      if (writeError) {
+        return `Session ${sessionID} has no messages yet, and Tally also failed to write ${outputPath}. ${writeError}`
+      }
+      return `Session ${sessionID} has no messages yet. A short report was saved to: ${outputPath}`
+    }
+
+    const formatter = new OutputFormatter(result.costCalculator)
+    formatter.setConfig(runtime.config)
+
+    const writeError = await writeReport(outputPath, formatter.format(result.analysis, quota))
+    if (writeError) {
+      return writeError
+    }
+
+    return buildSuccessSummary(outputPath, result.analysis)
+  } catch (error) {
+    const fatalMessage = formatErrorMessage(error)
+    warnings.add(`Tally returned a fallback report instead of failing the tool call: ${fatalMessage}`, `fatal:${sessionID}`)
+
+    const output = buildFailureReport(sessionID, warnings.list(), fatalMessage)
+    const writeError = await writeReport(outputPath, output)
+    if (writeError) {
+      return `Tally hit an error and also failed to write ${outputPath}. ${writeError}`
+    }
+
+    return `Tally hit an error. A fallback report was saved to: ${outputPath}`
+  }
+}
+
+// The UI path re-fetches the report as the sidebar refreshes, so a successful view is kept for a
+// short while. Only the session aggregate that feeds the analysis is part of the identity: when the
+// transcript or cost changes, OpenCode also advances `time.updated`, which invalidates the entry.
+const REPORT_CACHE_TTL_MS = 10 * 60 * 1000
+
+interface CachedReport {
+  fingerprint: string
+  expiresAt: number
+  view: ReportView
+}
+
+const reportCache = new Map<string, CachedReport>()
+// Concurrent UI refreshes of the same unchanged session must share one analysis. Keyed by the
+// cache identity so a promise is only reused while the result would be identical.
+const reportInFlight = new Map<string, Promise<Record<string, unknown>>>()
+
+export function resetReportCacheForTest(): void {
+  reportCache.clear()
+  reportInFlight.clear()
+}
+
+function reportFingerprint(session: OpenCodeSession): string {
+  return `${session.time.updated}:${JSON.stringify(session.tokens)}:${session.cost}`
+}
+
+const plugin: Plugin.Plugin = {
+  id: PLUGIN_ID,
+  async setup(ctx) {
+    const runtime: TallyRuntime = {
+      ctx,
+      snapshots: new RequestSnapshotStore(),
+      captureFailure: {},
+      pricingData: await loadModelPricing(),
+      config: await loadTallyConfig(ctx.options),
+    }
+
+    const quotaOptions = { loadAuth: () => loadOpenCodeAuthWithIntegrations(ctx.integration) }
+    const quotaHandler = createQuotaHandler(quotaOptions)
+
+    // Remember each session's latest system prompt and tool definitions so reports measure the
+    // real request context. This hook runs on every model request, so it must never fail one.
+    await ctx.session.hook("context", (event) => {
+      try {
+        runtime.snapshots.set(event.sessionID, captureRequestSnapshot(event))
+      } catch (error) {
+        runtime.captureFailure.message = formatErrorMessage(error)
+      }
+    })
+
+    await ctx.tool.transform((editor) => {
+      editor.add({
+        name: TOOL_NAME,
+        description: TOOL_DESCRIPTION,
+        input: TOOL_INPUT,
+        // Expose the tool directly instead of only through Code Mode, so /tally can call it.
+        options: { codemode: false },
+        execute: async (input, context) => ({
+          content: await runTally(runtime, readArgs(input), context, quotaHandler),
+        }),
+      })
+    })
+
+    // The UI path: UI parts fetch the structured report and render it natively, with no model call.
+    await ctx.rpc.register(TallyRpc, {
+      report: async (input, context) => {
+        const args = readArgs(input)
+        if (!args.sessionID) return context.error("analysis_failed", "A sessionID is required.", {})
+
+        const sessionID = args.sessionID
+        try {
+          const session = await runtime.ctx.session.get({ sessionID })
+          const fingerprint = reportFingerprint(session)
+          const now = Date.now()
+          for (const [id, entry] of reportCache) {
+            if (entry.expiresAt <= now) reportCache.delete(id)
+          }
+          const cached = reportCache.get(sessionID)
+          if (cached && cached.fingerprint === fingerprint) {
+            return cached.view as unknown as Record<string, unknown>
+          }
+
+          const key = `${sessionID}:${fingerprint}`
+          let inFlight = reportInFlight.get(key)
+          if (!inFlight) {
+            // Resolve to the final handler result so every waiter gets the same view or the same
+            // declared error. The promise is removed once it settles, allowing a later refresh.
+            const analysis = (async (): Promise<Record<string, unknown>> => {
+              try {
+                const result = await analyzeSession(runtime, args, sessionID, new WarningCollector())
+                if (!result)
+                  return context.error("empty_session", `Session ${sessionID} has no messages yet.`, {}) as unknown as Record<string, unknown>
+
+                const cost = result.costCalculator.calculateCost(result.analysis)
+                const view = buildReportView(result.analysis, cost, runtime.config)
+                reportCache.set(sessionID, { fingerprint, expiresAt: Date.now() + REPORT_CACHE_TTL_MS, view })
+                return view as unknown as Record<string, unknown>
+              } catch (error) {
+                return context.error("analysis_failed", formatErrorMessage(error), {}) as unknown as Record<string, unknown>
+              }
+            })()
+            inFlight = analysis.finally(() => reportInFlight.delete(key))
+            reportInFlight.set(key, inFlight)
+          }
+          return await inFlight
+        } catch (error) {
+          return context.error("analysis_failed", formatErrorMessage(error), {})
+        }
+      },
+      quota: async () => (await quotaHandler()) as unknown as Record<string, unknown>,
+    })
+
+    await ctx.command.transform((editor) => {
+      editor.add({
+        name: COMMAND_NAME,
+        description: COMMAND_DESCRIPTION,
+        execute: async ({ sessionID, prompt, delivery }) => {
+          const request = prompt.text.trim()
+          await ctx.session.prompt({
+            ...prompt,
+            sessionID,
+            text: request ? `${COMMAND_PROMPT}\n\n${request}` : COMMAND_PROMPT,
+            delivery,
+          })
+        },
+      })
+    })
+  },
+}
+
+export default plugin

@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json.schemastore.org/package.json",
+  "name": "opencode-tally",
+  "version": "1.0.0",
+  "description": "Tally: token usage, context, cache, cost, and quota for OpenCode sessions",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./tui": "./dist/tui.js",
+    "./schema": "./tally-config.schema.json"
+  },
+  "scripts": {
+    "clean": "rm -rf dist",
+    "build": "npm run clean && tsc",
+    "build:tui": "bun scripts/build-tui.ts",
+    "test": "bun test && npm run test:dist",
+    "test:dist": "npm run build && npm run build:tui && node -e \"await import('./dist/index.js')\"",
+    "prepublishOnly": "npm run build && npm run build:tui",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.tui.json"
+  },
+  "keywords": [
+    "opencode",
+    "opencode-plugin",
+    "plugin",
+    "tokens",
+    "token-usage",
+    "analysis",
+    "cost-tracking"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/myyra0/opencode-tally.git"
+  },
+  "bugs": {
+    "url": "https://github.com/myyra0/opencode-tally/issues"
+  },
+  "homepage": "https://github.com/myyra0/opencode-tally#readme",
+  "author": "myyra0",
+  "license": "MIT",
+  "peerDependencies": {
+    "@opencode/plugin": "^2.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@opencode/plugin": {
+      "optional": true
+    }
+  },
+  "dependencies": {
+    "@huggingface/tokenizers": "^0.1.3",
+    "js-tiktoken": "^1.0.15"
+  },
+  "devDependencies": {
+    "@opencode/plugin": "2.2.6",
+    "@opencode/theme": "2.2.6",
+    "@opentui/core": "0.8.1",
+    "@opentui/solid": "0.8.1",
+    "@types/bun": "^1.2.0",
+    "@types/node": "^22.0.0",
+    "solid-js": "1.9.17",
+    "typescript": "^5.7.0"
+  },
+  "files": [
+    "dist/",
+    "models.json",
+    "tally-config.json",
+    "tally-config.schema.json",
+    "README.md",
+    "LICENSE"
+  ]
+}

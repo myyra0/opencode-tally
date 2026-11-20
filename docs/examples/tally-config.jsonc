@@ -1,0 +1,59 @@
+{
+  // Point your editor at the schema for validation and autocomplete.
+  "$schema": "https://raw.githubusercontent.com/myyra0/opencode-tally/main/plugin/tally-config.schema.json",
+
+  // Analysis flags. Restart OpenCode after changing any of these.
+  "enableContextBreakdown": true, // context broken down by source (system, instructions, user, tool output, assistant)
+  "enableToolSchemaEstimation": true, // estimate how large the tool definitions are
+  "enableCacheEfficiency": true, // cache hit rate and savings lines
+  "enableSubagentAnalysis": true, // include child sessions (subagents)
+  "enableDetailedSubagentCostBreakdown": false, // expand each subagent into token and cost buckets
+  "enableSkillAnalysis": true, // show available and loaded skills
+
+  // Sidebar display. Changes apply at the next refresh; no restart needed.
+  "sidebar": {
+    "enabled": true, // show or hide the whole sidebar block
+    "refreshSeconds": 60, // how often to refresh; whole number, at least 15
+    "sections": [
+      // which sections to show, and in what order
+      "quota", // subscription quota rows
+      "context", // context breakdown
+      "recorded", // recorded session usage
+      "contextWindow" // context window size
+    ],
+    "showBars": true, // small bar next to each number
+    "showPercentages": true, // percentage next to each number
+    "showWarnings": true, // the "! N warnings" line
+    "showUpdated": true // the "Updated <time>" line
+  },
+
+  // Subscription quota. Changes apply at the next quota refresh; no restart needed.
+  "quota": {
+    "enabled": true, // turn quota collection on or off
+    "refreshIntervalSeconds": 60, // how often to fetch quota; whole number, at least 15
+    "requestTimeoutMs": 10000, // per-provider timeout in ms; at least 1000
+    "showErrors": true, // show provider error and diagnostic messages
+
+    // Each key is a provider ID. Remove an entry, or set "enabled": false, to stop reading it.
+    "providers": {
+      "opencode-go": {
+        "enabled": true,
+        "label": "OpenCode Go", // optional name of your choosing
+        "showSidebarBar": true, // optional, defaults to true
+        "sidebarWindow": "all" // all | rolling | daily | weekly | monthly | credits | other
+        // Credentials are picked up from OpenCode. Override only if needed:
+        // "apiKey": "{env:OPENCODE_GO_KEY}",
+        // "authPath": "~/.config/opencode/auth.json",
+        // "baseUrl": "https://api.example.com"
+      },
+      "codex": {
+        "enabled": true,
+        "label": "Codex",
+        "showSidebarBar": true,
+        "sidebarWindow": "all"
+        // "apiKey": "{env:CODEX_KEY}",
+        // "authorizationScheme": "bearer" // raw | bearer
+      }
+    }
+  }
+}

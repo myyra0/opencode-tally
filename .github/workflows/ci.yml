@@ -1,0 +1,77 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Build and test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: plugin
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: plugin/package-lock.json
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.5
+
+      - name: Install
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+      - name: Build TUI
+        run: npm run build:tui
+
+      - name: Test
+        run: bun test
+
+      - name: Verify package entry and contents
+        run: |
+          node -e "await import('./dist/index.js')"
+          npm pack --dry-run --json > /tmp/pack.json
+          node - <<'NODE'
+          const data = require('/tmp/pack.json')
+          const entry = Array.isArray(data) ? data[0] : data['opencode-tally']
+          const files = entry.files.map((file) => file.path)
+          const required = [
+            'dist/index.js',
+            'dist/index.d.ts',
+            'dist/tui.js',
+            'models.json',
+            'tally-config.json',
+            'tally-config.schema.json',
+            'README.md',
+            'LICENSE',
+          ]
+          const missing = required.filter((file) => !files.includes(file))
+          const sources = files.filter((file) => file.endsWith('.ts') && !file.endsWith('.d.ts'))
+          if (missing.length) throw new Error(`Missing from tarball: ${missing.join(', ')}`)
+          if (sources.length) throw new Error(`TypeScript sources in tarball: ${sources.join(', ')}`)
+          NODE
