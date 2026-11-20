@@ -1,6 +1,6 @@
 // Quota text formatting shared by the sidebar and the text report.
 
-import type { BalanceQuota, UsageQuota, UsageWindow } from "./types.js"
+import type { BalanceQuota, UsageQuota, UsageWindow, UsageWindowKind } from "./types.js"
 import { quotaUsedPercent } from "./usage.js"
 
 /**
@@ -166,7 +166,9 @@ export function formatTimestamp(ms: number): string {
  * Converts a provider-reported window length (in seconds) into a stable display label,
  * matching expected sizes within a 5% tolerance before falling back to the caller's label.
  */
-export function limitLabelForWindow(seconds: number, fallback: string): string {
+type WindowBucket = "5h" | "daily" | "weekly" | "monthly"
+
+function windowBucket(seconds: number): WindowBucket | null {
   const minutes = Math.ceil(seconds / 60)
 
   const roughly = (expected: number) =>
@@ -175,21 +177,29 @@ export function limitLabelForWindow(seconds: number, fallback: string): string {
   const hour = 60
   const day = 24 * hour
 
-  if (roughly(5 * hour)) {
-    return "5h"
-  }
+  if (roughly(5 * hour)) return "5h"
+  if (roughly(day)) return "daily"
+  if (roughly(7 * day)) return "weekly"
+  if (roughly(30 * day)) return "monthly"
+  return null
+}
 
-  if (roughly(day)) {
-    return "daily"
-  }
+export function limitLabelForWindow(seconds: number, fallback: string): string {
+  return windowBucket(seconds) ?? fallback
+}
 
-  if (roughly(7 * day)) {
-    return "weekly"
+/** Classifies a window by its real duration rather than by its position in the payload. */
+export function windowKindForWindow(seconds: number): UsageWindowKind {
+  switch (windowBucket(seconds)) {
+    case "5h":
+      return "rolling"
+    case "daily":
+      return "daily"
+    case "weekly":
+      return "weekly"
+    case "monthly":
+      return "monthly"
+    default:
+      return seconds > 0 ? "rolling" : "other"
   }
-
-  if (roughly(30 * day)) {
-    return "monthly"
-  }
-
-  return fallback
 }

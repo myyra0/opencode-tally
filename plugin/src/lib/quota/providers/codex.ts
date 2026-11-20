@@ -7,7 +7,7 @@ import {
   type OpenCodeAuth,
 } from "../auth.js"
 import { ProviderError } from "../errors.js"
-import { limitLabelForWindow } from "../format.js"
+import { limitLabelForWindow, windowKindForWindow } from "../format.js"
 import { requestJson } from "../http.js"
 import type { ProviderDefinition } from "../registry.js"
 import type {
@@ -39,6 +39,7 @@ interface CodexRateLimitWindow {
 interface CodexRateLimit {
   readonly primary_window?: CodexRateLimitWindow
   readonly secondary_window?: CodexRateLimitWindow
+  readonly tertiary_window?: CodexRateLimitWindow
 }
 
 interface CodexCredentials {
@@ -95,6 +96,9 @@ function parseRateLimit(value: unknown): CodexRateLimit | undefined {
     secondary_window: isRecord(value.secondary_window)
       ? (parseWindow(value.secondary_window) ?? undefined)
       : undefined,
+    tertiary_window: isRecord(value.tertiary_window)
+      ? (parseWindow(value.tertiary_window) ?? undefined)
+      : undefined,
   }
 }
 
@@ -123,7 +127,7 @@ function codexWindow(
         : null
 
   return {
-    kind: windowSeconds > 0 ? "rolling" : "other",
+    kind: windowKindForWindow(windowSeconds),
     label:
       windowSeconds > 0
         ? limitLabelForWindow(windowSeconds, fallback)
@@ -297,6 +301,7 @@ export async function fetchCodexUsage(
   const windows = [
     primaryWindow,
     codexWindow(rateLimit?.secondary_window, "secondary"),
+    codexWindow(rateLimit?.tertiary_window, "tertiary"),
   ].filter((window): window is UsageWindow => window !== null)
 
   if (!primaryWindow) throw decodeError()

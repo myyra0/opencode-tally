@@ -367,6 +367,35 @@ test("builds authenticated requests and parses usage windows", async () => {
   expect(usage.windows[0]?.resetsAt).toBe(1_782_216_000 * 1000)
 })
 
+test("classifies windows by duration and reads a monthly tertiary window", async () => {
+  installFetchMock(
+    Response.json({
+      rate_limit: {
+        primary_window: { limit_window_seconds: 18_000, used_percent: 10 },
+        secondary_window: { limit_window_seconds: 604_800, used_percent: 20 },
+        tertiary_window: {
+          limit_window_seconds: 2_628_000,
+          reset_at: 1_800_000_000,
+          used_percent: 30,
+        },
+      },
+    })
+  )
+
+  const usage = await fetchCodexUsage(
+    undefined,
+    { openai: { access: "access-token", accountId: "account-id" } },
+    1000
+  )
+
+  expect(usage.windows.map((window) => [window.label, window.kind])).toEqual([
+    ["5h", "rolling"],
+    ["weekly", "weekly"],
+    ["monthly", "monthly"],
+  ])
+  expect(usage.windows[2]?.resetsAt).toBe(1_800_000_000 * 1000)
+})
+
 test("rejects malformed Codex responses", async () => {
   installFetchMock(Response.json([]))
 
