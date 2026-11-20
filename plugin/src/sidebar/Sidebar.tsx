@@ -19,7 +19,7 @@ import { resolveSections } from "./sections.js"
 const LABEL_WIDTH = 9
 const NARROW_LABEL_WIDTH = 7
 const VALUE_WIDTH = 6
-const QUOTA_BAR_WIDTH = 12
+const QUOTA_BAR_WIDTH = 8
 const LOCAL_BAR_WIDTH = 8
 // Fixed target layout; the host clips anything narrower. The slot does not supply a width.
 const TARGET_WIDTH = 34

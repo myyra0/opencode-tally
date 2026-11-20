@@ -100,7 +100,7 @@ export function Row(props: {
           </box>
         ) : null}
         {props.suffix ?? props.percent ? (
-          <text fg={props.theme.text.muted} width={7} wrapMode="none">
+          <text fg={props.theme.text.muted} width={7} flexShrink={0} wrapMode="none">
             {(props.suffix ?? props.percent)!.padStart(6)}
           </text>
         ) : null}
@@ -108,6 +108,7 @@ export function Row(props: {
           fg={props.theme.text.base}
           attributes={props.strong ? TextAttributes.BOLD : TextAttributes.NONE}
           width={props.valueWidth}
+          flexShrink={0}
           wrapMode="none"
         >
           {value()}
@@ -148,6 +149,7 @@ export function Line(props: {
       <text
         fg={props.theme.text.base}
         attributes={props.strong ? TextAttributes.BOLD : TextAttributes.NONE}
+        flexShrink={0}
         wrapMode="none"
       >
         {props.value}
