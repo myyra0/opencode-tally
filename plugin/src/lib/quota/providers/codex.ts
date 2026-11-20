@@ -190,6 +190,23 @@ async function loadFallbackCredentials(
   return readCodexAuthFile(undefined)
 }
 
+const CHATGPT_AUTH_CLAIM = "https://api.openai.com/auth"
+
+/** Reads the ChatGPT account id from the access token when OpenCode did not store it. */
+function accountIdFromAccessToken(access: string | undefined): string | undefined {
+  if (!access) return undefined
+  const parts = access.split(".")
+  if (parts.length !== 3) return undefined
+  try {
+    const payload = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"))
+    const claim = isRecord(payload) && isRecord(payload[CHATGPT_AUTH_CLAIM]) ? payload[CHATGPT_AUTH_CLAIM] : undefined
+    const id = claim?.chatgpt_account_id
+    return typeof id === "string" && id.trim() !== "" ? id.trim() : undefined
+  } catch {
+    return undefined
+  }
+}
+
 /** Fetches and normalizes Codex usage limits. */
 export async function fetchCodexUsage(
   config: CodexProviderConfig | undefined,
@@ -207,7 +224,7 @@ export async function fetchCodexUsage(
   )
   const openCodeAccountId = resolveCredential(
     typeof openai?.accountId === "string" ? openai.accountId : undefined
-  )
+  ) ?? accountIdFromAccessToken(openCodeAccess)
   const openCodeMethodID =
     typeof openai?.methodID === "string" ? openai.methodID.trim() : undefined
   const configuredAccess = resolveCredential(config?.apiKey)

@@ -272,6 +272,18 @@ const INTEGRATION_ALIASES: Record<string, readonly string[]> = {
   "command-code": ["commandcode"],
 }
 
+/** Reads the ChatGPT account id from either the value or its metadata, accepting both spellings. */
+function readAccountId(value: Record<string, unknown>): string | undefined {
+  const candidates: unknown[] = [value.accountId, value.accountID]
+  if (isRecord(value.metadata)) {
+    candidates.push(value.metadata.accountId, value.metadata.accountID)
+  }
+  for (const candidate of candidates) {
+    if (typeof candidate === "string" && candidate.trim() !== "") return candidate.trim()
+  }
+  return undefined
+}
+
 function convertCredential(value: any): OpenCodeAuthEntry | undefined {
   if (!value || typeof value !== "object") return undefined
   if (value.type === "key") {
@@ -283,6 +295,8 @@ function convertCredential(value: any): OpenCodeAuthEntry | undefined {
     const access = typeof value.access === "string" ? value.access.trim() : ""
     if (access === "") return undefined
     const entry: any = { access, key: access }
+    const accountId = readAccountId(value)
+    if (accountId !== undefined) entry.accountId = accountId
     if (typeof value.refresh === "string" && value.refresh.trim() !== "") {
       entry.refresh = value.refresh.trim()
     }
